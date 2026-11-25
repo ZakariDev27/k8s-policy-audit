@@ -1,0 +1,116 @@
+# Walkthrough step 3: API access fixed (dedicated service account, no token, no broad role).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: notes
+---
+# API access: a dedicated identity with no API token, and no role bound to it.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: notes
+  namespace: notes
+automountServiceAccountToken: false
+---
+# Storage: cap what the namespace can claim.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: storage
+  namespace: notes
+spec:
+  hard:
+    persistentvolumeclaims: "2"
+    requests.storage: 2Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: notes-data
+  namespace: notes
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notes
+  namespace: notes
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: notes
+  template:
+    metadata:
+      labels:
+        app: notes
+    spec:
+      serviceAccountName: notes
+      automountServiceAccountToken: false
+      containers:
+        - name: notes
+          image: nginxinc/nginx-unprivileged:1.27-alpine
+          ports:
+            - containerPort: 8080
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: notes-data
+        - name: tmp
+          emptyDir: 
+            sizeLimit: 64Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: notes
+  namespace: notes
+spec:
+  type: ClusterIP
+  selector:
+    app: notes
+  ports:
+    - port: 80
+      targetPort: 8080
+---
+# Network: nothing in or out unless a later policy allows it.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: notes
+spec:
+  podSelector: {}
+  policyTypes: ["Ingress", "Egress"]
+---
+# Network: only the ingress controller may reach the app.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: notes
+  namespace: notes
+spec:
+  podSelector:
+    matchLabels:
+      app: notes
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8080

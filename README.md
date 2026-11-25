@@ -15,38 +15,13 @@ Every finding names the object, explains the risk and says how to fix it. The ex
 code makes the tool usable as a CI gate, so a risky change fails the pipeline
 before it reaches a cluster.
 
-```console
-$ kpaudit scan demo/insecure --min-severity high
-kpaudit 0.1.0  |  source: demo/insecure  |  15 objects scanned
-
-API access (RBAC) (4)
-=====================
-HIGH     API001  ClusterRoleBinding/shop-insecure-admin
-    Grants every verb on every resource cluster-wide (via ClusterRole 'cluster-admin') to:
-    ServiceAccount shop-insecure/default.
-    Fix: Replace with a role listing only the verbs and resources actually needed.
-...
-Storage controls (1)
-====================
-CRITICAL STO001  Deployment/shop-insecure/api
-    Volume 'runtime' mounts host path '/var/run', which exposes node or cluster internals.
-    Fix: Use a PersistentVolumeClaim, ConfigMap or Secret instead. If the host path is
-         unavoidable, mount it readOnly and as narrowly as possible.
-
-Network firewall (4)
-====================
-HIGH     NET001  Namespace/shop-insecure
-    Runs 2 workload(s) with no NetworkPolicy. Every pod accepts traffic from, and can
-    connect to, anything in the cluster.
-    Fix: Add a default-deny policy, then allow only the flows each workload needs.
-...
-9 finding(s): 1 critical, 8 high
-```
+![kpaudit scanning the insecure demo](docs/images/scan-insecure.svg)
 
 ## Contents
 
 - [Install](#install)
 - [Quick start](#quick-start)
+- [Demos](#demos)
 - [Usage](#usage)
 - [Checks](#checks)
 - [Suppressing findings](#suppressing-findings)
@@ -67,31 +42,153 @@ pip install -e .
 
 ## Quick start
 
-Scan manifests. No cluster is needed:
-
 ```bash
 kpaudit scan demo/insecure      # deliberately misconfigured: 34 findings, exit code 2
 kpaudit scan demo/hardened      # the same app locked down: no findings, exit code 0
+kpaudit scan                    # the cluster your kubectl currently points at
 ```
 
-Scan a live cluster. This uses whatever context `kubectl` currently points at and
-only ever runs `kubectl get`, so it cannot change anything:
+A live scan only ever runs `kubectl get`, so it cannot change anything. The
+[demos](#demos) below walk through each of these.
+
+`demo/insecure` is deliberately misconfigured. Apply it only to a throwaway cluster.
+
+## Demos
+
+Four demos, each reproducible from this repository. The first three need no
+cluster. All output shown is real output from the tool.
+
+| Demo | Shows | Needs |
+| --- | --- | --- |
+| [1. Catch a misconfigured app](#demo-1-catch-a-misconfigured-app) | What a scan reports and how findings read | Python |
+| [2. Harden an app in three steps](#demo-2-harden-an-app-in-three-steps) | Findings dropping from 10 to 0 as each area is fixed | Python |
+| [3. Gate a pipeline](#demo-3-gate-a-pipeline) | Exit codes, filters and reports for CI | Python |
+| [4. Audit a live cluster](#demo-4-audit-a-live-cluster) | The same checks against a running kind cluster | kind, kubectl |
+
+### Demo 1: Catch a misconfigured app
+
+`demo/insecure` is a small shop application with the kinds of mistakes that reach
+real clusters: cluster-admin for a default service account, a role handed to every
+authenticated user, a container mounting the node's `/var/run`, an unencrypted
+StorageClass, no NetworkPolicy, and a LoadBalancer open to the internet.
 
 ```bash
-kind create cluster --name audit          # or: minikube start
-kubectl apply -f demo/insecure/ -f demo/hardened/
+kpaudit scan demo/insecure                       # all 34 findings
+kpaudit scan demo/insecure --min-severity high   # the 9 that matter most (screenshot above)
+kpaudit scan demo/insecure -c storage            # one area at a time
+kpaudit scan demo/hardened                       # the same app, locked down
+```
 
-kpaudit scan                              # whole cluster
-kpaudit scan -n shop-insecure             # one namespace
-kpaudit scan -c network --min-severity medium
-kpaudit scan -f markdown -o audit-report.md
+![kpaudit scanning the hardened demo](docs/images/scan-hardened.svg)
+
+The full report for the insecure demo, in the Markdown format the tool writes, is
+in [docs/sample-report.md](docs/sample-report.md).
+
+### Demo 2: Harden an app in three steps
+
+`demo/walkthrough` holds one application, `notes`, at four stages. Each file is the
+complete application, so you can scan any stage on its own and diff two stages to
+see exactly what changed.
+
+| Stage | File | What changed | API | Storage | Network | Total |
+| --- | --- | --- | ---: | ---: | ---: | ---: |
+| 0 | `0-insecure.yaml` | Starting point | 4 | 4 | 2 | **10** |
+| 1 | `1-network.yaml` | Default-deny policy, scoped allow rule, NodePort replaced by ClusterIP | 4 | 4 | 0 | **8** |
+| 2 | `2-storage.yaml` | Storage quota, single-writer claim, emptyDir size limit, read-only root filesystem | 4 | 0 | 0 | **4** |
+| 3 | `3-api.yaml` | Dedicated service account with no API token; broad `edit` binding removed | 0 | 0 | 0 | **0** |
+
+![Findings dropping across the walkthrough stages](docs/images/walkthrough.svg)
+
+Run it yourself:
+
+```bash
+kpaudit scan demo/walkthrough/0-insecure.yaml -c network
+```
+
+```
+Network firewall (2)
+====================
+HIGH     NET001  Namespace/notes
+    Runs 1 workload(s) with no NetworkPolicy. Every pod accepts traffic from, and can
+    connect to, anything in the cluster.
+    Fix: Add a default-deny policy, then allow only the flows each workload needs.
+
+MEDIUM   NET007  Service/notes/notes
+    NodePort service opens a port on every node, bypassing any load-balancer firewall.
+    Fix: Use ClusterIP behind an ingress controller, or firewall the node port range.
+
+2 finding(s): 1 high, 1 medium
+```
+
+See the fix, then confirm it worked:
+
+```bash
+diff demo/walkthrough/0-insecure.yaml demo/walkthrough/1-network.yaml
+kpaudit scan demo/walkthrough/1-network.yaml -c network      # No findings.
+```
+
+Repeat for `-c storage` with stage 2 and `-c api` with stage 3.
+
+### Demo 3: Gate a pipeline
+
+The exit code is the gate: `2` when anything is at or above `--fail-on`, `0` otherwise.
+
+```bash
+kpaudit scan demo/walkthrough/0-insecure.yaml; echo "exit code: $?"                    # 2
+kpaudit scan demo/walkthrough/3-api.yaml; echo "exit code: $?"                         # 0
+
+# Stage 2 has medium findings left: it passes the default gate, fails a stricter one
+kpaudit scan demo/walkthrough/2-storage.yaml > /dev/null; echo "exit code: $?"           # 0
+kpaudit scan demo/walkthrough/2-storage.yaml --fail-on medium > /dev/null; echo "exit code: $?"   # 2
+
+# Reports for people and for machines
+kpaudit scan demo/insecure -f markdown -o audit-report.md
+kpaudit scan demo/insecure -f json | python3 -c "import json,sys; print(json.load(sys.stdin)['summary'])"
+```
+
+This repository gates itself the same way: [its CI workflow](.github/workflows/ci.yml)
+requires the hardened demo to pass and the insecure demo to fail on every push.
+
+### Demo 4: Audit a live cluster
+
+```bash
+kind create cluster --name audit
+kubectl apply -f demo/insecure/ -f demo/hardened/
+kubectl -n shop rollout status deployment/api
+
+kpaudit scan                      # everything
+kpaudit scan -n shop              # hardened namespace: No findings.
+kpaudit scan -n shop-insecure     # exit code 2
 
 kind delete cluster --name audit
 ```
 
-`demo/insecure` grants cluster-admin to a default service account, mounts a host
-path and opens a LoadBalancer to the world, among other things. Apply it only to a
-throwaway cluster.
+`scripts/e2e.sh` runs this demo unattended and checks the result. This is its
+output from CI, on a kind cluster holding 260 objects:
+
+```
+==> Deploying demo workloads to context: kind-kpaudit-e2e
+==> Waiting for the hardened demo to become ready (proves the secure config runs)
+deployment "api" successfully rolled out
+partitioned roll out complete: 1 new pods have been updated...
+==> Live scan
+Report written to /tmp/kpaudit-live.n0kR5Q.json (36 finding(s))
+objects scanned: 260
+ insecure: 34 finding(s)
+ hardened: 0 finding(s)
+  cluster: 2 finding(s)
+           low      STO004 StorageClass/standard
+           info     STO003 StorageClass/standard
+ok: live report matches expectations
+==> Exit codes
+ok: hardened namespace passes with --fail-on low
+ok: insecure namespace fails the gate (exit 2)
+==> End-to-end test passed
+```
+
+The two findings on the cluster itself are kind's default StorageClass, which
+stores volumes unencrypted on the node and deletes data with the claim. Both are
+correct, and expected on a local cluster.
 
 ## Usage
 
@@ -243,7 +340,8 @@ src/kpaudit/
     rbac.py         API access
     storage.py      storage controls
     network.py      network firewall
-demo/               insecure and hardened example manifests
+demo/               insecure, hardened and step-by-step walkthrough manifests
+docs/               sample report and README screenshots
 scripts/e2e.sh      end-to-end test against a real cluster
 tests/              unit and CLI tests
 ```
@@ -266,6 +364,8 @@ make e2e         # end-to-end, needs a throwaway cluster as the current context
   workloads to become ready, runs a live scan and asserts that the insecure demo
   triggers every check, the hardened demo triggers none, and the cluster's own
   objects produce nothing at medium or above.
+- **The demos are tested.** The walkthrough's finding counts, the sample report
+  and the README screenshots are regenerated in the test suite and must match.
 - **CI** runs lint and tests on Python 3.10 and 3.13, and runs the end-to-end test
   on a kind cluster for every push and pull request.
 

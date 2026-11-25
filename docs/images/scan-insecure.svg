@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="808" height="1144" viewBox="0 0 808 1144" role="img" aria-label="kpaudit scan demo/insecure --min-severity high output">
+<rect width="808" height="1144" rx="8" fill="#0d1117"/>
+<path d="M0 8a8 8 0 0 1 8-8h792a8 8 0 0 1 8 8v26H0z" fill="#161b22"/>
+<circle cx="20" cy="17" r="6" fill="#ff5f56"/>
+<circle cx="40" cy="17" r="6" fill="#ffbd2e"/>
+<circle cx="60" cy="17" r="6" fill="#27c93f"/>
+<g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" font-size="14">
+<text x="18" y="56" fill="#ffffff" font-weight="bold" xml:space="preserve">$ kpaudit scan demo/insecure --min-severity high</text>
+<text x="18" y="75" fill="#8b949e" font-weight="normal" xml:space="preserve">kpaudit 0.1.0  |  source: demo/insecure  |  15 objects scanned</text>
+<text x="18" y="94" fill="#d7dce2" font-weight="normal" xml:space="preserve"></text>
+<text x="18" y="113" fill="#ffffff" font-weight="bold" xml:space="preserve">API access (RBAC) (4)</text>
+<text x="18" y="132" fill="#ffffff" font-weight="bold" xml:space="preserve">=====================</text>
+<text x="18" y="151" xml:space="preserve"><tspan fill="#ff6b6b" font-weight="bold">HIGH</tspan><tspan fill="#ffffff">     API001  ClusterRoleBinding/shop-insecure-admin</tspan></text>
+<text x="18" y="170" fill="#d7dce2" font-weight="normal" xml:space="preserve">    Grants every verb on every resource cluster-wide (via ClusterRole 'cluster-admin') to:</text>
+<text x="18" y="189" fill="#d7dce2" font-weight="normal" xml:space="preserve">    ServiceAccount shop-insecure/default.</text>
+<text x="18" y="208" fill="#8b949e" font-weight="normal" xml:space="preserve">    Fix: Replace with a role listing only the verbs and resources actually needed.</text>
+<text x="18" y="227" fill="#d7dce2" font-weight="normal" xml:space="preserve"></text>
+<text x="18" y="246" xml:space="preserve"><tspan fill="#ff6b6b" font-weight="bold">HIGH</tspan><tspan fill="#ffffff">     API002  ClusterRoleBinding/shop-insecure-ops-everyone</tspan></text>
+<text x="18" y="265" fill="#d7dce2" font-weight="normal" xml:space="preserve">    Grants ClusterRole 'shop-insecure-ops' cluster-wide to system:authenticated. Anyone who</text>
+<text x="18" y="284" fill="#d7dce2" font-weight="normal" xml:space="preserve">    can reach the API server gets these permissions.</text>
+<text x="18" y="303" fill="#8b949e" font-weight="normal" xml:space="preserve">    Fix: Bind the role to named users, groups or service accounts instead.</text>
+<text x="18" y="322" fill="#d7dce2" font-weight="normal" xml:space="preserve"></text>
+<text x="18" y="341" xml:space="preserve"><tspan fill="#ff6b6b" font-weight="bold">HIGH</tspan><tspan fill="#ffffff">     API003  ClusterRoleBinding/shop-insecure-ops-everyone</tspan></text>
+<text x="18" y="360" fill="#d7dce2" font-weight="normal" xml:space="preserve">    Allows reading Secrets cluster-wide (via ClusterRole 'shop-insecure-ops') for: Group</text>
+<text x="18" y="379" fill="#d7dce2" font-weight="normal" xml:space="preserve">    system:authenticated.</text>
+<text x="18" y="398" fill="#8b949e" font-weight="normal" xml:space="preserve">    Fix: Remove secrets from the role, or restrict it with resourceNames to the specific</text>
+<text x="18" y="417" fill="#8b949e" font-weight="normal" xml:space="preserve">         Secrets required.</text>
+<text x="18" y="436" fill="#d7dce2" font-weight="normal" xml:space="preserve"></text>
+<text x="18" y="455" xml:space="preserve"><tspan fill="#ff6b6b" font-weight="bold">HIGH</tspan><tspan fill="#ffffff">     API004  ClusterRoleBinding/shop-insecure-ops-everyone</tspan></text>
+<text x="18" y="474" fill="#d7dce2" font-weight="normal" xml:space="preserve">    Allows privilege escalation cluster-wide (escalate/bind/impersonate or full control of</text>
+<text x="18" y="493" fill="#d7dce2" font-weight="normal" xml:space="preserve">    RBAC objects, via ClusterRole 'shop-insecure-ops') for: Group system:authenticated.</text>
+<text x="18" y="512" fill="#8b949e" font-weight="normal" xml:space="preserve">    Fix: Drop escalate, bind and impersonate, and write access to RBAC objects, unless this</text>
+<text x="18" y="531" fill="#8b949e" font-weight="normal" xml:space="preserve">         subject administers access control.</text>
+<text x="18" y="550" fill="#d7dce2" font-weight="normal" xml:space="preserve"></text>
+<text x="18" y="569" fill="#ffffff" font-weight="bold" xml:space="preserve">Storage controls (1)</text>
+<text x="18" y="588" fill="#ffffff" font-weight="bold" xml:space="preserve">====================</text>
+<text x="18" y="607" xml:space="preserve"><tspan fill="#ff7ae0" font-weight="bold">CRITICAL</tspan><tspan fill="#ffffff"> STO001  Deployment/shop-insecure/api</tspan></text>
+<text x="18" y="626" fill="#d7dce2" font-weight="normal" xml:space="preserve">    Volume 'runtime' mounts host path '/var/run', which exposes node or cluster internals.</text>
+<text x="18" y="645" fill="#8b949e" font-weight="normal" xml:space="preserve">    Fix: Use a PersistentVolumeClaim, ConfigMap or Secret instead. If the host path is</text>
+<text x="18" y="664" fill="#8b949e" font-weight="normal" xml:space="preserve">         unavoidable, mount it readOnly and as narrowly as possible.</text>
+<text x="18" y="683" fill="#d7dce2" font-weight="normal" xml:space="preserve"></text>
+<text x="18" y="702" fill="#ffffff" font-weight="bold" xml:space="preserve">Network firewall (4)</text>
+<text x="18" y="721" fill="#ffffff" font-weight="bold" xml:space="preserve">====================</text>
+<text x="18" y="740" xml:space="preserve"><tspan fill="#ff6b6b" font-weight="bold">HIGH</tspan><tspan fill="#ffffff">     NET001  Namespace/shop-insecure</tspan></text>
+<text x="18" y="759" fill="#d7dce2" font-weight="normal" xml:space="preserve">    Runs 2 workload(s) with no NetworkPolicy. Every pod accepts traffic from, and can</text>
+<text x="18" y="778" fill="#d7dce2" font-weight="normal" xml:space="preserve">    connect to, anything in the cluster.</text>
+<text x="18" y="797" fill="#8b949e" font-weight="normal" xml:space="preserve">    Fix: Add a default-deny policy, then allow only the flows each workload needs.</text>
+<text x="18" y="816" fill="#d7dce2" font-weight="normal" xml:space="preserve"></text>
+<text x="18" y="835" xml:space="preserve"><tspan fill="#ff6b6b" font-weight="bold">HIGH</tspan><tspan fill="#ffffff">     NET005  NetworkPolicy/billing-insecure/invoices-allow</tspan></text>
+<text x="18" y="854" fill="#d7dce2" font-weight="normal" xml:space="preserve">    Ingress rule allows traffic from ipBlock 0.0.0.0/0.</text>
+<text x="18" y="873" fill="#8b949e" font-weight="normal" xml:space="preserve">    Fix: Narrow the peer to the specific CIDRs, namespaces or pods that need access.</text>
+<text x="18" y="892" fill="#d7dce2" font-weight="normal" xml:space="preserve"></text>
+<text x="18" y="911" xml:space="preserve"><tspan fill="#ff6b6b" font-weight="bold">HIGH</tspan><tspan fill="#ffffff">     NET007  Service/shop-insecure/api</tspan></text>
+<text x="18" y="930" fill="#d7dce2" font-weight="normal" xml:space="preserve">    LoadBalancer service accepts traffic from any address (no restrictive</text>
+<text x="18" y="949" fill="#d7dce2" font-weight="normal" xml:space="preserve">    loadBalancerSourceRanges).</text>
+<text x="18" y="968" fill="#8b949e" font-weight="normal" xml:space="preserve">    Fix: Set spec.loadBalancerSourceRanges to the client CIDRs, or front the service with an</text>
+<text x="18" y="987" fill="#8b949e" font-weight="normal" xml:space="preserve">         ingress controller.</text>
+<text x="18" y="1006" fill="#d7dce2" font-weight="normal" xml:space="preserve"></text>
+<text x="18" y="1025" xml:space="preserve"><tspan fill="#ff6b6b" font-weight="bold">HIGH</tspan><tspan fill="#ffffff">     NET008  Deployment/billing-insecure/ledger</tspan></text>
+<text x="18" y="1044" fill="#d7dce2" font-weight="normal" xml:space="preserve">    Uses hostNetwork, so its pods share the node's network stack and are not isolated by</text>
+<text x="18" y="1063" fill="#d7dce2" font-weight="normal" xml:space="preserve">    most NetworkPolicy implementations.</text>
+<text x="18" y="1082" fill="#8b949e" font-weight="normal" xml:space="preserve">    Fix: Remove hostNetwork unless this is a node-level agent.</text>
+<text x="18" y="1101" fill="#d7dce2" font-weight="normal" xml:space="preserve"></text>
+<text x="18" y="1120" fill="#ffffff" font-weight="bold" xml:space="preserve">9 finding(s): 1 critical, 8 high</text>
+</g>
+</svg>
