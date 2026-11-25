@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install -e ".[dev]"
+      - run: ruff check .
+      - run: pytest -q
+      - name: Hardened demo must pass the audit
+        run: kpaudit scan demo/hardened --fail-on low
+      - name: Insecure demo must fail the audit
+        run: |
+          if kpaudit scan demo/insecure > /dev/null; then
+            echo "expected findings in demo/insecure" && exit 1
+          fi
+
+  e2e:
+    name: e2e (kind)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install -e .
+      - uses: helm/kind-action@v1
+        with:
+          cluster_name: kpaudit-e2e
+      - run: scripts/e2e.sh
+      - name: Cluster state on failure
+        if: failure()
+        run: |
+          kubectl get pods -A -o wide
+          kubectl -n shop describe pods
+          kubectl -n shop get events --sort-by=.lastTimestamp

@@ -1,0 +1,66 @@
+# Deliberately misconfigured demo: NetworkPolicies exist but do not protect much.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: billing-insecure
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: invoices
+  namespace: billing-insecure
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: invoices
+  template:
+    metadata:
+      labels:
+        app: invoices
+    spec:
+      containers:
+        - name: invoices
+          image: nginx:1.27-alpine
+          ports:
+            - containerPort: 80
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ledger
+  namespace: billing-insecure
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ledger
+  template:
+    metadata:
+      labels:
+        app: ledger
+    spec:
+      hostNetwork: true
+      containers:
+        - name: ledger
+          image: redis:7-alpine
+---
+# Selects only 'invoices', and lets the whole internet in. 'ledger' is uncovered.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: invoices-allow
+  namespace: billing-insecure
+spec:
+  podSelector:
+    matchLabels:
+      app: invoices
+  policyTypes: ["Ingress", "Egress"]
+  ingress:
+    - from:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+    - from:
+        - namespaceSelector: {}
+  egress:
+    - {}

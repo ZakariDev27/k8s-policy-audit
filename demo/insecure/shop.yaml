@@ -1,0 +1,176 @@
+# Deliberately misconfigured demo. Do not deploy outside a throwaway cluster.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: shop-insecure
+---
+# API access: the namespace's default service account is cluster-admin.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: shop-insecure-admin
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+  - kind: ServiceAccount
+    name: default
+    namespace: shop-insecure
+---
+# API access: a role that reads every Secret and can rewrite RBAC.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: shop-insecure-ops
+rules:
+  - apiGroups: [""]
+    resources: ["secrets", "configmaps"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["clusterroles"]
+    verbs: ["bind", "escalate"]
+  - apiGroups: ["apps"]
+    resources: ["*"]
+    verbs: ["get", "list"]
+---
+# API access: ...and it is handed to every authenticated user.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: shop-insecure-ops-everyone
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: shop-insecure-ops
+subjects:
+  - kind: Group
+    name: system:authenticated
+    apiGroup: rbac.authorization.k8s.io
+---
+# Storage: an EBS class that never asks for encryption (never provisions on kind).
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: shop-insecure-fast
+provisioner: ebs.csi.aws.com
+parameters:
+  type: gp3
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+---
+# Storage: a hostPath volume with the deprecated Recycle policy.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: shop-insecure-uploads
+spec:
+  capacity:
+    storage: 1Gi
+  accessModes: ["ReadWriteMany"]
+  persistentVolumeReclaimPolicy: Recycle
+  storageClassName: manual
+  hostPath:
+    path: /tmp/shop-insecure-uploads
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: uploads
+  namespace: shop-insecure
+spec:
+  accessModes: ["ReadWriteMany"]
+  storageClassName: manual
+  volumeName: shop-insecure-uploads
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  namespace: shop-insecure
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: api
+  template:
+    metadata:
+      labels:
+        app: api
+    spec:
+      containers:
+        - name: api
+          image: nginx:1.27-alpine
+          ports:
+            - containerPort: 80
+              hostPort: 8080
+          volumeMounts:
+            - name: runtime
+              mountPath: /host/run
+            - name: uploads
+              mountPath: /uploads
+            - name: scratch
+              mountPath: /scratch
+      volumes:
+        - name: runtime
+          hostPath:
+            path: /var/run
+        - name: uploads
+          persistentVolumeClaim:
+            claimName: uploads
+        - name: scratch
+          emptyDir: {}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cache
+  namespace: shop-insecure
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cache
+  template:
+    metadata:
+      labels:
+        app: cache
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          ports:
+            - containerPort: 6379
+---
+# Network: the API is open to the internet and the cache is on every node port.
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+  namespace: shop-insecure
+spec:
+  type: LoadBalancer
+  selector:
+    app: api
+  ports:
+    - port: 80
+      targetPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cache
+  namespace: shop-insecure
+spec:
+  type: NodePort
+  selector:
+    app: cache
+  ports:
+    - port: 6379
+      targetPort: 6379
